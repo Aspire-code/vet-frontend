@@ -1,194 +1,294 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { VetsApi } from "../../api/vets.api";
+import axios from 'axios'; // Import axios for error checking
+
+interface VetProfile {
+    bio?: string;
+    clinic_name?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip_code?: string;
+}
+
+interface ServiceObject {
+    service_id: string;
+    name: string;
+}
 
 interface Vet {
-  user_id: string;
-  name: string;
-  email: string;
-  role: string;
-  phone?: string;
-  location?: string;
-  services?: string[];
+    vet_id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    clinic_name?: string;
+    city?: string;
+    state?: string;
+    services?: ServiceObject[]; 
 }
 
 export default function VetDashboard() {
-  const { user, logout, setUser } = useAuth();
+    const { user } = useAuth();
 
-  // Form for updating own profile
-  const [info, setInfo] = useState({
-    phone: user?.phone || "",
-    location: user?.location || "",
-  });
+    const [profile, setProfile] = useState<VetProfile | null>(null);
+    const [info, setInfo] = useState<VetProfile>({
+        bio: "",
+        clinic_name: "",
+        address: "",
+        city: "",
+        state: "",
+        zip_code: "",
+    });
 
-  const [serviceInput, setServiceInput] = useState("");
-  const [services, setServices] = useState<string[]>(user?.services || []);
-  const [saving, setSaving] = useState(false);
+    const [services, setServices] = useState<string[]>([]);
+    const [allVets, setAllVets] = useState<Vet[]>([]);
+    const [serviceInput, setServiceInput] = useState("");
+    const [saving, setSaving] = useState(false);
 
-  // All vets directory
-  const [vets, setVets] = useState<Vet[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    const isNewVet = !profile;
 
-  // Load all vets
-  const loadVets = async () => {
-    try {
-      setLoading(true);
-      const res = await VetsApi.list({});
-      setVets(res.data);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load vets.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadMyProfile = async () => {
+        if (!user?.id) return;
 
-  useEffect(() => {
-    loadVets();
-  }, []);
+        try {
+            const res = await VetsApi.getProfileById(user.id);
+            
+            if (res.data) {
+                setProfile(res.data);
+                setInfo({
+                    bio: res.data.bio || "",
+                    clinic_name: res.data.clinic_name || "",
+                    address: res.data.address || "",
+                    city: res.data.city || "",
+                    state: res.data.state || "",
+                    zip_code: res.data.zip_code || "",
+                }); 
 
-  // Add a new service to own profile
-  const addService = () => {
-    if (serviceInput.trim() && !services.includes(serviceInput.trim())) {
-      setServices([...services, serviceInput.trim()]);
-      setServiceInput("");
-    }
-  };
+                if (res.data.services && Array.isArray(res.data.services)) {
+                    // Map the incoming array of {service_id, name} objects to simple strings (names)
+                    setServices(res.data.services.map((s: ServiceObject) => s.name));
+                } else {
+                    setServices([]); // Ensure services is an empty array if none are found
+                }
+            }
+        } catch (error) {
+            // Only log an error if it's not the expected 404 (i.e., new vet)
+            if (axios.isAxiosError(error) && error.response?.status !== 404) {
+                 console.error("Failed to load user profile:", error);
+            } else if (!axios.isAxiosError(error)) {
+                 console.error("Failed to load user profile:", error);
+            }
+        }
+    };
 
-  const removeService = (s: string) => {
-    setServices(services.filter((svc) => svc !== s));
-  };
+    const loadAllVets = async () => {
+        try {
+            // NOTE: The backend now returns aggregated services correctly
+            const res = await VetsApi.list({}); 
+            setAllVets(res.data);
+        } catch (error) {
+            // Gracefully handle 404 for the list endpoint (often means no vets found)
+            if (axios.isAxiosError(error) && error.response?.status === 404) {
+                setAllVets([]);
+            } else {
+                console.error("Failed to load all vets:", error);
+            }
+        }
+    };
 
-  // Save profile update
-  const updateProfile = async () => {
-    setSaving(true);
-    try {
-      const payload = {
-        services,
-        phone: info.phone,
-        location: info.location,
-      };
-      const res = await VetsApi.updateProfile(user!.user_id, payload);
+    useEffect(() => {
+        if (!user?.id) return;
+        loadMyProfile();
+        loadAllVets();
+    }, [user]);
 
-      const updatedUser = { ...user, ...res.data };
-      setUser(updatedUser);
-      localStorage.setItem("vetlink_user", JSON.stringify(updatedUser));
-      alert("Profile updated successfully!");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Update failed");
-    } finally {
-      setSaving(false);
-    }
-  };
+    const addService = () => {
+        const trimmedService = serviceInput.trim();
+        if (!trimmedService) return;
+        if (services.includes(trimmedService)) return; 
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-50 p-8">
-      <div className="max-w-6xl mx-auto space-y-12">
+        setServices([...services, trimmedService]);
+        setServiceInput("");
+    };
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-purple-700">Vet Dashboard</h1>
-          <button
-            onClick={logout}
-            className="px-5 py-2 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600 transition"
-          >
-            Logout
-          </button>
-        </div>
+    const removeService = (s: string) => {
+        setServices(services.filter((x) => x !== s));
+    };
 
-        {/* Greeting & Profile Update */}
-        <div className="bg-white p-8 rounded-3xl shadow-2xl space-y-6">
-          <h2 className="text-2xl font-bold text-blue-600 mb-4">Hello, {user?.name}!</h2>
+    const saveProfile = async () => {
+        if (!user?.id) return alert("User not logged in.");
 
-          <div className="space-y-4">
-            {/* Phone */}
-            <label className="block">
-              <div className="text-sm text-gray-500 mb-2">Phone</div>
-              <input
-                type="text"
-                placeholder="+1 234 567 890"
-                className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition"
-                value={info.phone}
-                onChange={(e) => setInfo({ ...info, phone: e.target.value })}
-              />
-            </label>
+        try {
+            setSaving(true);
+            
+            const profileData = {
+                ...info,
+                services, // Send the list of service NAMES
+            };
 
-            {/* Location */}
-            <label className="block">
-              <div className="text-sm text-gray-500 mb-2">Location</div>
-              <input
-                type="text"
-                placeholder="City, State, Country"
-                className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition"
-                value={info.location}
-                onChange={(e) => setInfo({ ...info, location: e.target.value })}
-              />
-            </label>
+            if (isNewVet) {
+                await VetsApi.createProfile({
+                    ...profileData,
+                    user_id: user.id,
+                });
+                alert("Profile created successfully!");
+            } else {
+                await VetsApi.updateProfile(user.id, profileData);
+                alert("Profile updated successfully!");
+            }
 
-            {/* Services as tags */}
-            <div>
-              <div className="text-sm text-gray-500 mb-2">Services</div>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {services.map((s) => (
-                  <span
-                    key={s}
-                    className="bg-blue-200 text-blue-800 px-3 py-1 rounded-full cursor-pointer hover:bg-blue-300"
-                    onClick={() => removeService(s)}
-                  >
-                    {s} &times;
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 p-4 border rounded-xl focus:ring-2 focus:ring-blue-400"
-                  placeholder="Add a service"
-                  value={serviceInput}
-                  onChange={(e) => setServiceInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addService())}
-                />
-                <button
-                  className="px-6 py-3 bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-600 transition"
-                  onClick={addService}
-                >
-                  Add
-                </button>
-              </div>
+            // --- REFRESH DATA AFTER SAVE ---
+            await loadMyProfile();
+            await loadAllVets();
+            // --- ---
+        } catch (error) {
+            console.error("Error saving profile:", error);
+            alert(
+                "Failed to save profile. Check the console for server details (likely a 500 error)."
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100 p-8">
+            <div className="max-w-7xl mx-auto space-y-14">
+                <div className="bg-white p-10 rounded-3xl shadow-xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-3xl font-bold text-indigo-600">Vet Profile</h2>
+                        <span
+                            className={`px-4 py-1 text-xs font-bold rounded-full ${
+                                isNewVet
+                                    ? "bg-orange-100 text-orange-700"
+                                    : "bg-green-100 text-green-700"
+                            }`}
+                        >
+                            {isNewVet ? "NEW VET" : "ACTIVE"}
+                        </span>
+                    </div>
+
+                    <p className="text-sm text-gray-500 mb-6">
+                        {isNewVet
+                            ? "Complete your profile to appear in client searches."
+                            : "Update your profile details anytime."}
+                    </p>
+
+                    <div className="grid md:grid-cols-2 gap-4 mb-6">
+                        {[
+                            ["Clinic Name", "clinic_name"],
+                            ["Address", "address"],
+                            ["City", "city"],
+                            ["State", "state"],
+                            ["Zip Code", "zip_code"],
+                        ].map(([label, key]) => (
+                            <input
+                                key={key}
+                                className="p-4 border rounded-xl"
+                                placeholder={label}
+                                value={(info as any)?.[key] || ""}
+                                onChange={(e) =>
+                                    setInfo({ ...info, [key]: e.target.value })
+                                }
+                            />
+                        ))}
+                    </div>
+
+                    <textarea
+                        className="w-full p-4 border rounded-xl mb-6"
+                        placeholder="Short bio about your clinic"
+                        value={info.bio || ""}
+                        onChange={(e) =>
+                            setInfo({ ...info, bio: e.target.value })
+                        }
+                    />
+
+                    <div className="mb-6">
+                        <p className="font-semibold mb-2">Services Offered</p>
+
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {services.map((s) => (
+                                <span
+                                    key={s}
+                                    onClick={() => removeService(s)}
+                                    className="cursor-pointer px-3 py-1 text-sm rounded-full bg-indigo-100 hover:bg-indigo-200"
+                                >
+                                    {s} ✕
+                                </span>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-2">
+                            <input
+                                className="flex-1 p-3 border rounded-xl"
+                                placeholder="Add service"
+                                value={serviceInput}
+                                onChange={(e) => setServiceInput(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && addService()}
+                            />
+                            <button
+                                onClick={addService}
+                                className="px-6 bg-indigo-600 text-white rounded-xl"
+                            >
+                                Add
+                            </button>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={saveProfile}
+                        disabled={saving}
+                        className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold"
+                    >
+                        {saving
+                            ? "Saving..."
+                            : isNewVet
+                            ? "Create Profile"
+                            : "Update Profile"}
+                    </button>
+                </div>
+
+                <div className="bg-white p-10 rounded-3xl shadow-xl">
+                    <h2 className="text-2xl font-bold text-indigo-600 mb-8">
+                        All Registered Vets
+                    </h2>
+
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {allVets.map((v) => (
+                            <div
+                                key={v.vet_id}
+                                className="p-6 rounded-2xl bg-gray-50 shadow hover:shadow-lg transition"
+                            >
+                                <h3 className="text-lg font-bold">{v.name}</h3>
+                                <p className="text-sm text-gray-500">{v.email}</p>
+
+                                <p className="mt-2 text-sm">
+                                    {v.clinic_name} — {v.city}, {v.state}
+                                </p>
+
+                                {v.services?.length ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {v.services.map((service) => (
+                                            <span
+                                                // FIX: Use a compound key to guarantee uniqueness across the entire list
+                                                key={`${v.vet_id}-${service.service_id}`} 
+                                                className="px-2 py-1 text-xs rounded-full bg-white shadow"
+                                            >
+                                                {service.name}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 mt-3">
+                                        No services listed
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
-
-            {/* Save Button */}
-            <button
-              className={`w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-semibold rounded-xl hover:from-purple-600 hover:to-purple-700 transition ${saving ? "opacity-50 cursor-not-allowed" : ""}`}
-              onClick={updateProfile}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save Profile"}
-            </button>
-          </div>
         </div>
-
-        {/* Vet Directory */}
-        <div className="bg-white p-8 rounded-3xl shadow-2xl space-y-6">
-          <h2 className="text-2xl font-bold text-blue-600 mb-4">All Vets</h2>
-
-          {loading && <p>Loading...</p>}
-          {error && <p className="text-red-500">{error}</p>}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {vets.map((v) => (
-              <div key={v.user_id} className="bg-gradient-to-tr from-purple-50 to-blue-50 rounded-2xl shadow-lg p-6 hover:shadow-2xl transition transform hover:-translate-y-1 hover:scale-105">
-                <h3 className="text-xl font-bold text-purple-700">{v.name}</h3>
-                <p className="text-sm text-gray-700">Role: {v.role}</p>
-                {v.location && <p className="text-sm text-gray-700">Location: {v.location}</p>}
-                <p className="text-sm text-gray-700">Email: {v.email}</p>
-                {v.phone && <p className="text-sm text-gray-700">Phone: {v.phone}</p>}
-                {v.services && v.services.length > 0 && <p className="text-sm text-gray-700 mt-2 truncate">Services: {v.services.join(", ")}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }

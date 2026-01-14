@@ -17,8 +17,9 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   loading: boolean;
-  setUser: React.Dispatch<React.SetStateAction<User | null>>; // ✅ safer typing
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
   login: (credentials: { email: string; password: string }) => Promise<User>;
   register: (data: any) => Promise<User>;
   logout: () => void;
@@ -36,19 +37,30 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* 🔐 Load user ONCE on app start */
+  /* 🔐 Load user & token ONCE on app start */
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("vetlink_user");
-      if (stored) {
-        const parsed: User = JSON.parse(stored);
+      const storedUser = localStorage.getItem("vetlink_user");
+      const storedToken = localStorage.getItem("vetlink_token");
+
+      if (storedUser) {
+        const parsed: User = JSON.parse(storedUser);
         parsed.role = parsed.role.toUpperCase() as "VET" | "CLIENT";
         setUser(parsed);
       }
-    } catch {
+
+      if (storedToken) {
+        setToken(storedToken);
+      }
+
+      console.log("AuthContext: Loaded user and token from localStorage");
+    } catch (err) {
+      console.error("AuthContext: Failed to load user/token", err);
       setUser(null);
+      setToken(null);
     } finally {
       setLoading(false);
     }
@@ -67,7 +79,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem("vetlink_user", JSON.stringify(loggedUser));
 
     if (res.data.token) {
+      setToken(res.data.token);
       localStorage.setItem("vetlink_token", res.data.token);
+      console.log("AuthContext: Token saved", res.data.token);
     }
 
     return loggedUser;
@@ -86,7 +100,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem("vetlink_user", JSON.stringify(registeredUser));
 
     if (res.data.token) {
+      setToken(res.data.token);
       localStorage.setItem("vetlink_token", res.data.token);
+      console.log("AuthContext: Token saved", res.data.token);
     }
 
     return registeredUser;
@@ -95,14 +111,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   /* 🚪 LOGOUT */
   const logout = () => {
     setUser(null);
+    setToken(null);
     localStorage.removeItem("vetlink_user");
     localStorage.removeItem("vetlink_token");
+    console.log("AuthContext: User logged out");
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        token,
         loading,
         setUser,
         login,
@@ -115,9 +134,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-/* ========================
-   HOOK
-======================== */
+
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);

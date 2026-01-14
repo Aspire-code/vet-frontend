@@ -4,13 +4,13 @@ import { VetsApi } from "../../api/vets.api";
 import SearchBar from "../../components/SearchBar";
 
 interface Vet {
-  user_id: string;
+  vet_id: string;
   name: string;
   email: string;
-  role: string;
   phone: string;
   services?: string[];
   location?: string;
+  profile_pic_url?: string;
 }
 
 export default function VetList() {
@@ -19,12 +19,12 @@ export default function VetList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const load = async (filter: { q?: string; location?: string } = {}) => {
+  const load = async (filter: { q?: string } = {}) => {
     setLoading(true);
     setError("");
     try {
       const res = await VetsApi.list(filter);
-      setVets(res.data);
+      setVets(res.data); // Each vet must have vet_id
     } catch (err: any) {
       setError(err.message || "Failed to load vets");
     } finally {
@@ -52,14 +52,13 @@ export default function VetList() {
 
       {loading && <p className="text-gray-500">Loading vets...</p>}
       {error && <p className="text-red-500">{error}</p>}
-
       {!loading && !error && vets.length === 0 && (
         <p className="text-gray-500">No vets found. Try another search.</p>
       )}
 
       <div className="space-y-4">
         {vets.map((v) => (
-          <VetCard vet={v} key={v.user_id} />
+          <VetCard vet={v} key={v.vet_id} />
         ))}
       </div>
     </div>

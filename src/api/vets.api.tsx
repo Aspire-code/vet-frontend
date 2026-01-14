@@ -1,16 +1,52 @@
 import api from "./axios";
 
+export interface Vet {
+  vet_id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  bio?: string;
+  clinic_name?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  profile_pic_url?: string;
+  services?: string[];
+}
+
+export interface VetProfilePayload {
+  bio?: string;
+  clinic_name?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  profile_pic_url?: string;
+  services?: string[];
+}
+
 export const VetsApi = {
-  list: (params?: { q?: string; location?: string }) =>
-    api.get("/vets", { params }),
+  list: (params?: { q?: string; city?: string; service?: string }) =>
+    api.get<Vet[]>("/vetprofile", { params }),
 
-  create: (data: any) => api.post("/vets", data),
+  getById: (vetId: string) =>
+    api.get<Vet>(`/vetprofile/${vetId}`),
 
-  getById: (id: string) => api.get(`/vets/${id}`),
+  getProfileById: (vetId: string) =>
+    api.get<Vet | null>(`/vetprofile/${vetId}`),
 
-  updateProfile: (id: string, data: any) =>
-    api.put(`/vets/${id}`, data),
+  createProfile: (data: VetProfilePayload) =>
+    api.post("/vetprofile", data),
 
-  updateServices: (id: string, services: string[]) =>
-    api.put(`/vets/${id}/services`, { services }),
+  updateProfile: (vetId: string, data: VetProfilePayload) =>
+    api.put(`/vetprofile/${vetId}`, data),
+
+  getServicesByVetId: (vetId: string) =>
+    api.get<{ service_id: string; name: string }[]>(
+      `/vetservices/${vetId}`
+    ),
+
+  updateServices: (vetId: string, serviceIds: string[]) =>
+    api.put(`/vetservices/${vetId}`, { serviceIds }),
 };
