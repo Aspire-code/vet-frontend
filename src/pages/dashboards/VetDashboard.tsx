@@ -46,8 +46,7 @@ export default function VetDashboard() {
     bio: "", clinic_name: "", address: "", city: "", state: "", zip_code: "",
   });
 
-  const [services, setServices] = useState<string[]>([]);
-  const [allVets, setAllVets] = useState<Vet[]>([]);
+  const [services, setServices] = useState<string[]>([]); // Array of service names
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [serviceInput, setServiceInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,11 +63,7 @@ export default function VetDashboard() {
       const fetchedData = res.data?.data || (res.data as Appointment[]);
       setAppointments(Array.isArray(fetchedData) ? fetchedData : []);
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        setAppointments([]);
-      } else {
-        setAppointments([]);
-      }
+      setAppointments([]);
     }
   }, [user?.id]);
 
@@ -88,6 +83,7 @@ export default function VetDashboard() {
           state: profileData.state ?? "",
           zip_code: profileData.zip_code ?? "",
         });
+        // Map existing service objects to string array for the UI tags
         if (Array.isArray(profileData.services)) {
           setServices(profileData.services.map((s: ServiceObject) => s.name));
         }
@@ -97,46 +93,22 @@ export default function VetDashboard() {
     }
   }, [user?.id]);
 
-  const loadAllVets = useCallback(async () => {
-    try {
-      const res = await VetsApi.list({});
-      const fetchedVets = res.data?.data || (res.data as Vet[]);
-      setAllVets(Array.isArray(fetchedVets) ? fetchedVets : []);
-    } catch (error) {
-      setAllVets([]);
-    }
-  }, []);
-
   useEffect(() => {
     if (!user?.id) return;
     loadMyProfile();
-    loadAllVets();
     loadAppointments();
-  }, [user?.id, loadMyProfile, loadAllVets, loadAppointments]);
+  }, [user?.id, loadMyProfile, loadAppointments]);
 
   // --- HANDLERS ---
 
-  /**
-   * FIXED HANDLER
-   * Uses 'confirmed' as the standard status to match common backend requirements.
-   */
   const handleUpdateStatus = async (appointmentId: string, status: 'confirmed' | 'rejected') => {
     try {
       setUpdatingId(appointmentId);
-      // Sending 'confirmed' instead of 'approved' to fix the 500 mismatch
       await VetsApi.updateAppointment(appointmentId, { status });
       await loadAppointments();
     } catch (error) {
       console.error("Failed to update status:", error);
-      // Final fallback: if 'confirmed' fails, try 'approved'
-      if (status === 'confirmed') {
-        try {
-            await VetsApi.updateAppointment(appointmentId, { status: 'approved' as any });
-            await loadAppointments();
-            return;
-        } catch (e) { console.error(e); }
-      }
-      alert("Error: The server did not accept the status update. Check backend logs.");
+      alert("Error updating status. Please check connectivity.");
     } finally {
       setUpdatingId(null);
     }
@@ -144,8 +116,11 @@ export default function VetDashboard() {
 
   const addService = () => {
     const trimmedService = serviceInput.trim();
-    if (!trimmedService || services.includes(trimmedService)) return;
-    setServices(prev => [...prev, trimmedService]);
+    // Normalize to Sentence case to avoid "grooming" vs "Grooming" duplicates
+    const formattedService = trimmedService.charAt(0).toUpperCase() + trimmedService.slice(1).toLowerCase();
+    
+    if (!trimmedService || services.includes(formattedService)) return;
+    setServices(prev => [...prev, formattedService]);
     setServiceInput("");
   };
 
@@ -159,14 +134,23 @@ export default function VetDashboard() {
     if (!user?.id) return;
     try {
       setSaving(true);
-      const payload = { ...info, services };
+      
+      // The payload includes all profile info PLUS the services array
+      // Your backend should use these strings to sync with the Services table
+      const payload = { 
+        ...info, 
+        services,
+        user_id: user.id 
+      };
+
       if (isNewVet) {
-        await VetsApi.createProfile({ ...payload, user_id: user.id } as any);
+        await VetsApi.createProfile(payload as any);
       } else {
         await VetsApi.updateProfile(user.id, payload);
       }
-      await Promise.all([loadMyProfile(), loadAllVets()]);
-      alert("Profile Saved!");
+      
+      await loadMyProfile();
+      alert("Profile and Services updated! Clients can now see these services on your card.");
     } catch (error) {
       alert("Failed to save profile.");
     } finally {
@@ -200,21 +184,18 @@ export default function VetDashboard() {
                       ? "Invalid Date"
                       : `${dateObj.toLocaleDateString()} ${dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-                    const isActive = appt.status === 'confirmed' || appt.status === 'approved';
-                    const isRejected = appt.status === 'rejected';
-
                     return (
                       <tr key={appt.appointment_id} className="text-sm hover:bg-gray-50 transition">
                         <td className="py-4">
-                          <p className="font-bold text-gray-800">{appt.client_name || "user"}</p>
+                          <p className="font-bold text-gray-800">{appt.client_name || "Client"}</p>
+                          <p className="text-[10px] text-indigo-400 font-bold uppercase">{appt.pet_name}</p>
                         </td>
                         <td className="py-4 text-gray-600">{appt.service_name}</td>
                         <td className="py-4 text-gray-600">{formattedDate}</td>
                         <td className="py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              isActive ? 'bg-green-100 text-green-700' :
-                              isRejected ? 'bg-red-100 text-red-700' : 
-                              'bg-yellow-100 text-yellow-700'
+                              appt.status === 'confirmed' || appt.status === 'approved' ? 'bg-green-100 text-green-700' :
+                              appt.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                             }`}>
                             {(appt.status || 'pending').toUpperCase()}
                           </span>
@@ -255,9 +236,9 @@ export default function VetDashboard() {
         {/* VET PROFILE SECTION */}
         <div className="bg-white p-10 rounded-3xl shadow-xl">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-bold text-indigo-600">Vet Profile</h2>
+            <h2 className="text-3xl font-bold text-indigo-600">Vet Profile & Services</h2>
             <span className={`px-4 py-1 text-xs font-bold rounded-full ${isNewVet ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"}`}>
-              {isNewVet ? "NEW VET" : "ACTIVE"}
+              {isNewVet ? "NEW PROFILE" : "LIVE ON DASHBOARD"}
             </span>
           </div>
 
@@ -270,7 +251,7 @@ export default function VetDashboard() {
                 <div key={key} className="flex flex-col">
                   <label className="text-xs text-gray-400 mb-1 ml-1">{labels[key]}</label>
                   <input
-                    className="p-4 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50"
+                    className="p-4 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50 font-medium"
                     value={info[key]}
                     onChange={(e) => updateInfoField(key, e.target.value)}
                   />
@@ -281,39 +262,50 @@ export default function VetDashboard() {
 
           <label className="text-xs text-gray-400 mb-1 ml-1">Professional Bio</label>
           <textarea
-            className="w-full p-4 border rounded-xl mb-6 focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50"
+            className="w-full p-4 border rounded-xl mb-6 focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50 font-medium"
             rows={4}
             value={info.bio}
             onChange={(e) => updateInfoField('bio', e.target.value)}
           />
 
-          <div className="mb-6">
-            <p className="font-semibold mb-2">Services Offered</p>
-            <div className="flex flex-wrap gap-2 mb-3">
+          {/* DYNAMIC SERVICES SECTION */}
+          <div className="mb-10 bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100">
+            <p className="font-bold text-indigo-900 mb-2">Services You Provide</p>
+            <p className="text-xs text-indigo-500 mb-4">Click a service tag to remove it. Clients search for you based on these.</p>
+            
+            <div className="flex flex-wrap gap-2 mb-4">
               {services.map((s) => (
-                <span key={s} onClick={() => removeService(s)} className="cursor-pointer px-3 py-1 text-sm rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex items-center gap-2 font-medium">
-                  {s} <span className="text-xs font-bold">✕</span>
-                </span>
+                <button 
+                  key={s} 
+                  onClick={() => removeService(s)} 
+                  className="px-4 py-2 text-sm rounded-full bg-white text-indigo-700 border border-indigo-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-2 font-bold shadow-sm"
+                >
+                  {s} <span className="text-[10px]">✕</span>
+                </button>
               ))}
+              {services.length === 0 && <p className="text-sm text-gray-400 italic">No services added yet.</p>}
             </div>
+
             <div className="flex gap-2">
               <input
-                className="flex-1 p-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Add service"
+                className="flex-1 p-4 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white shadow-inner"
+                placeholder="e.g. Vaccination, Grooming, Surgery..."
                 value={serviceInput}
                 onChange={(e) => setServiceInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addService()}
               />
-              <button onClick={addService} className="px-6 bg-indigo-600 text-white rounded-xl font-bold">Add</button>
+              <button onClick={addService} className="px-8 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100">
+                Add
+              </button>
             </div>
           </div>
 
           <button
             onClick={saveProfile}
             disabled={saving}
-            className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold hover:opacity-90 transition disabled:opacity-50 shadow-lg"
+            className="w-full py-5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-lg hover:opacity-90 transition disabled:opacity-50 shadow-xl shadow-indigo-200"
           >
-            {saving ? "Saving..." : isNewVet ? "Create Profile" : "Update Profile"}
+            {saving ? "SAVING CHANGES..." : isNewVet ? "CREATE PUBLIC PROFILE" : "UPDATE PUBLIC PROFILE"}
           </button>
         </div>
       </div>

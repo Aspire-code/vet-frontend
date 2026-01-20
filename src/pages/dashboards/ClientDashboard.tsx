@@ -11,6 +11,8 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(false);
 
   const [selectedVet, setSelectedVet] = useState<any>(null);
+  // NEW: State to track which specific service from the vet is chosen
+  const [selectedService, setSelectedService] = useState<any>(null); 
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [petName, setPetName] = useState("");
@@ -18,18 +20,14 @@ export default function ClientDashboard() {
   const deposit = 1000;
   const today = new Date().toISOString().split("T")[0];
 
-  // --- NEW: CANCELLATION HANDLER ---
   const handleCancelAppointment = async (appointmentId: string) => {
     if (!window.confirm("Are you sure you want to cancel this appointment?")) return;
-
     try {
       setLoading(true);
-      // Calls the delete/cancel endpoint in your AppointmentsApi
       await AppointmentsApi.cancel(appointmentId);
       alert("Appointment cancelled successfully.");
-      await loadAppointments(); // Refresh the list
+      await loadAppointments();
     } catch (err: any) {
-      console.error("Cancellation Error:", err);
       alert(err.response?.data?.message || "Failed to cancel appointment.");
     } finally {
       setLoading(false);
@@ -39,7 +37,8 @@ export default function ClientDashboard() {
   const searchVets = async () => {
     try {
       const res = await VetsApi.list({ location, q: service });
-      setVets(res.data || []);
+      const data = res.data?.data || res.data;
+      setVets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load vets", err);
     }
@@ -50,37 +49,28 @@ export default function ClientDashboard() {
     if (!token) return;
     try {
       const res = await AppointmentsApi.getMy();
-      const fetchedData = res.data?.data || [];
-      setAppointments(fetchedData);
+      setAppointments(res.data?.data || []);
     } catch (err: any) {
       console.error("Failed to load appointments", err);
     }
   };
 
   const bookAndPay = async () => {
-    if (!selectedVet || !date || !time || !petName) {
-      alert("Please fill in the pet name, date, and time.");
+    // UPDATED: Include selectedService in validation
+    if (!selectedVet || !date || !time || !petName || !selectedService) {
+      alert("Please fill in the pet name, date, time, and select a service.");
       return;
     }
 
     setLoading(true);
     try {
       const userStr = localStorage.getItem("vetlink_user");
-      if (!userStr) {
-        alert("Please log in to book.");
-        setLoading(false);
-        return;
-      }
+      if (!userStr) return;
+      
       const client = JSON.parse(userStr);
       const clientId = client.id || client.user_id;
       const newAppointmentId = `APP-${Date.now()}`;
       const vetIdForDb = selectedVet.vet_id || selectedVet.user_id;
-
-      if (!vetIdForDb) {
-        alert("The selected vet does not have a valid profile ID.");
-        setLoading(false);
-        return;
-      }
 
       const scheduledTime = `${date} ${time}:00.000`;
 
@@ -88,7 +78,9 @@ export default function ClientDashboard() {
         appointment_id: newAppointmentId,
         client_id: clientId,
         vet_id: vetIdForDb,
-        service_id: "S1",
+        // UPDATED: Use the actual service ID and name selected by the user
+        service_id: selectedService.service_id || "S1", 
+        service_name: selectedService.name, 
         scheduled_time: scheduledTime,
         status: 'pending',
         pet_name: petName
@@ -99,26 +91,21 @@ export default function ClientDashboard() {
         vet_id: vetIdForDb,
         amount: deposit,
         currency: "KES",
-        description: `Consultation deposit for ${petName}`,
+        description: `${selectedService.name} deposit for ${petName}`,
         client_phone: client.phone || "0000000000",
         appointment_time: scheduledTime,
         appointment_id: newAppointmentId
       });
 
-      alert("Booking Success! Your appointment is currently PENDING.");
+      alert(`Success! ${selectedService.name} is now PENDING.`);
       setSelectedVet(null);
+      setSelectedService(null);
       setPetName("");
       setDate("");
       setTime("");
       await loadAppointments();
     } catch (err: any) {
-      console.error("Detailed Booking Error:", err);
-      const dbError = err.response?.data?.message || "";
-      if (dbError.includes("FOREIGN KEY") || dbError.includes("Vet ID")) {
-        alert("Database Error: The selected Vet is not fully registered in the Profile system.");
-      } else {
-        alert(dbError || "Internal server error during booking");
-      }
+      alert("Booking Error: Ensure the Vet has a completed profile.");
     } finally {
       setLoading(false);
     }
@@ -131,95 +118,136 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 px-6 py-10">
-      <h1 className="text-4xl font-extrabold text-center mb-10 text-gray-800">VetConnect Dashboard</h1>
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-4xl font-black mb-10 text-gray-900">VetConnect</h1>
 
-      {/* SEARCH SECTION */}
-      <div className="max-w-5xl mx-auto mb-10 bg-white rounded-2xl shadow-sm p-6 flex flex-col md:flex-row gap-4 border border-gray-200">
-        <input className="border border-gray-300 rounded-lg px-4 py-3 w-full outline-none focus:ring-2 focus:ring-blue-500" placeholder="City" value={location} onChange={(e) => setLocation(e.target.value)} />
-        <input className="border border-gray-300 rounded-lg px-4 py-3 w-full outline-none focus:ring-2 focus:ring-blue-500" placeholder="Service" value={service} onChange={(e) => setService(e.target.value)} />
-        <button onClick={searchVets} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-lg transition">Find Vets</button>
-      </div>
+        {/* SEARCH SECTION */}
+        <div className="mb-12 bg-white rounded-[2rem] shadow-sm p-8 flex flex-col md:flex-row gap-4 border border-gray-100">
+          <input className="bg-gray-50 rounded-2xl px-6 py-4 w-full outline-none focus:ring-2 focus:ring-blue-500 font-medium" placeholder="City (e.g. Nyeri)" value={location} onChange={(e) => setLocation(e.target.value)} />
+          <input className="bg-gray-50 rounded-2xl px-6 py-4 w-full outline-none focus:ring-2 focus:ring-blue-500 font-medium" placeholder="Service (e.g. Surgery)" value={service} onChange={(e) => setService(e.target.value)} />
+          <button onClick={searchVets} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-10 py-4 rounded-2xl transition-all shadow-lg shadow-blue-100">Search</button>
+        </div>
 
-      {/* VET LIST */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-14">
-        {vets.map((vet) => (
-          <div key={vet.vet_id || vet.user_id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 flex flex-col">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-gray-800">{vet.name}</h2>
-              <p className="text-sm text-gray-500 mb-2">📍 {vet.city || "Remote"}</p>
-              <p className="text-xs text-gray-400 mb-4 italic">{vet.clinic_name || "Independent Practitioner"}</p>
-            </div>
-            <button onClick={() => setSelectedVet(vet)} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition-colors">Book Now</button>
-          </div>
-        ))}
-      </div>
+        {/* VET LIST */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
+          {vets.map((vet) => (
+            <div key={vet.vet_id || vet.user_id} className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100 flex flex-col hover:shadow-xl transition-all group">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-gray-900 mb-1">{vet.name}</h2>
+                <p className="text-sm font-bold text-pink-500 mb-1 flex items-center">
+                  <span className="mr-1">📍</span> {vet.city || "Nyeri"}
+                </p>
+                <p className="text-sm text-gray-400 italic mb-6">{vet.clinic_name || "Muthui Vets Limited"}</p>
 
-      {/* MY APPOINTMENTS */}
-      <div className="max-w-5xl mx-auto">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">My Appointments</h2>
-        <div className="grid gap-4">
-          {appointments.length > 0 ? appointments.map((a) => (
-            <div key={a.appointment_id} className="bg-white rounded-xl p-5 border border-gray-100 flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-6">
-                <div>
-                  <p className="font-bold text-blue-600">{a.service_name || "Consultation"}</p>
-                  <p className="text-sm text-gray-600 font-medium">Vet: {a.vet_name}</p>
-                  <p className="text-xs text-gray-400">{new Date(a.scheduled_time).toLocaleString()}</p>
-                  {a.pet_name && <p className="text-[10px] text-indigo-400 uppercase mt-1">Pet: {a.pet_name}</p>}
+                <div className="flex flex-wrap gap-2 mb-8">
+                  {vet.services && vet.services.length > 0 ? (
+                    vet.services.map((s: any) => (
+                      <span key={s.service_id || s} className="bg-blue-50 text-blue-600 text-[11px] px-4 py-1.5 rounded-full font-bold border border-blue-100">
+                        {s.name || s}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-gray-300">General Consultation</span>
+                  )}
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                  a.status === 'confirmed' || a.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                  a.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {a.status}
-                </span>
               </div>
-
-              {/* ACTION BUTTONS */}
-              <div className="flex gap-2">
-                {a.status === 'pending' && (
-                  <button 
-                    onClick={() => handleCancelAppointment(a.appointment_id)}
-                    disabled={loading}
-                    className="text-xs font-bold text-red-500 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
+              <button 
+                onClick={() => setSelectedVet(vet)} 
+                className="w-full bg-[#00a63e] hover:bg-[#008f35] text-white py-4 rounded-2xl font-bold text-lg transition-transform active:scale-95"
+              >
+                Book Now
+              </button>
             </div>
-          )) : <p className="text-gray-400 italic">No appointments found.</p>}
+          ))}
+        </div>
+
+        {/* MY APPOINTMENTS */}
+        <div className="max-w-4xl">
+          <h2 className="text-2xl font-black mb-8 text-gray-900 flex items-center">
+            My Appointments <span className="ml-3 bg-gray-100 text-gray-500 text-xs px-3 py-1 rounded-full">{appointments.length}</span>
+          </h2>
+          <div className="space-y-4">
+            {appointments.length > 0 ? appointments.map((a) => (
+              <div key={a.appointment_id} className="bg-white rounded-[2rem] p-6 border border-gray-50 flex justify-between items-center shadow-sm">
+                <div className="flex items-center gap-6">
+                  <div className="h-12 w-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 font-bold">
+                    {a.pet_name?.charAt(0) || "P"}
+                  </div>
+                  <div>
+                    {/* UPDATED: This now correctly reflects the service name saved during booking */}
+                    <p className="font-bold text-gray-900">{a.service_name || "Checkup"}</p>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-tighter">Vet: {a.vet_name}</p>
+                    <p className="text-[11px] text-blue-500 mt-1">{new Date(a.scheduled_time).toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                    a.status === 'confirmed' || a.status === 'approved' ? 'bg-green-100 text-green-700' : 
+                    a.status === 'pending' ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'
+                  }`}>
+                    {a.status}
+                  </span>
+                  {a.status === 'pending' && (
+                    <button onClick={() => handleCancelAppointment(a.appointment_id)} className="p-2 hover:bg-red-50 rounded-xl transition-colors">
+                      ❌
+                    </button>
+                  )}
+                </div>
+              </div>
+            )) : (
+              <div className="bg-gray-50 rounded-[2rem] p-12 text-center border-2 border-dashed border-gray-200">
+                <p className="text-gray-400 font-bold">No upcoming visits.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* BOOKING MODAL */}
       {selectedVet && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <h2 className="text-2xl font-bold mb-1">Book with {selectedVet.name}</h2>
-            <p className="text-sm text-gray-500 mb-6">Booking Fee: KES {deposit.toLocaleString()}</p>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl">
+            <h2 className="text-2xl font-black text-gray-900 mb-1">Book Visit</h2>
+            <p className="text-sm text-gray-400 mb-8 font-medium">With {selectedVet.name}</p>
             
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* NEW: SERVICE SELECTION DROPDOWN */}
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase">Pet Name</label>
-                <input type="text" placeholder="e.g. Buddy" className="border rounded-lg px-4 py-3 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500" value={petName} onChange={(e) => setPetName(e.target.value)} />
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Choose Service</label>
+                <select 
+                  className="bg-gray-50 rounded-2xl px-5 py-4 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500 font-bold appearance-none cursor-pointer"
+                  value={selectedService ? JSON.stringify(selectedService) : ""}
+                  onChange={(e) => setSelectedService(JSON.parse(e.target.value))}
+                >
+                  <option value="" disabled>-- Select a service --</option>
+                  {selectedVet.services?.map((s: any) => (
+                    <option key={s.service_id || s} value={JSON.stringify(s)}>
+                      {s.name || s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Pet Name</label>
+                <input type="text" className="bg-gray-50 rounded-2xl px-5 py-4 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={petName} onChange={(e) => setPetName(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase">Date</label>
-                  <input type="date" className="border rounded-lg px-4 py-3 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500" value={date} min={today} onChange={(e) => setDate(e.target.value)} />
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Date</label>
+                  <input type="date" className="bg-gray-50 rounded-2xl px-5 py-4 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={date} min={today} onChange={(e) => setDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase">Time</label>
-                  <input type="time" className="border rounded-lg px-4 py-3 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500" value={time} onChange={(e) => setTime(e.target.value)} />
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Time</label>
+                  <input type="time" className="bg-gray-50 rounded-2xl px-5 py-4 w-full mt-1 outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={time} onChange={(e) => setTime(e.target.value)} />
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-4 mt-8">
-              <button disabled={loading} onClick={() => setSelectedVet(null)} className="flex-1 border border-gray-300 rounded-lg py-3 hover:bg-gray-50 transition">Close</button>
-              <button disabled={loading} onClick={bookAndPay} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition">
-                {loading ? "Processing..." : "Pay & Book"}
+            <div className="flex gap-4 mt-10">
+              <button onClick={() => { setSelectedVet(null); setSelectedService(null); }} className="flex-1 text-gray-400 font-bold py-4">Cancel</button>
+              <button disabled={loading} onClick={bookAndPay} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-100 active:scale-95 transition-transform">
+                {loading ? "..." : "Confirm"}
               </button>
             </div>
           </div>
