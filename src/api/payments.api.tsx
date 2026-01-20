@@ -7,9 +7,8 @@ export interface DepositPayload {
   currency: string;
   description: string;
   client_phone: string;
-  appointment_time: string; // ISO 8601 string or similar format
+  appointment_time: string; // ISO 8601 string
 }
-
 export interface DepositResponse {
   transaction_id: string;
   status: 'pending' | 'completed' | 'failed';
@@ -17,10 +16,15 @@ export interface DepositResponse {
 }
 
 export const PaymentsApi = {
-  /**
-   * Sends a request to the backend to process a booking deposit.
-   * Targets POST /api/payments/deposit
-   */
-  createDeposit: (data: DepositPayload) => 
-    api.post<DepositResponse>("/payments/deposit", data),
+  
+  createDeposit: async (data: DepositPayload): Promise<DepositResponse> => {
+    try {
+      const response = await api.post<DepositResponse>("/payments/deposit", data);
+      return response.data;
+    } catch (error: any) {
+  
+      console.error("Deposit API error:", error.response?.data || error.message);
+      throw error;
+    }
+  },
 };

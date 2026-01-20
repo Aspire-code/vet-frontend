@@ -40,25 +40,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* 🔐 Load user & token ONCE on app start */
+  /* 🔁 Restore session ONCE */
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem("vetlink_user");
       const storedToken = localStorage.getItem("vetlink_token");
 
-      if (storedUser) {
+      if (storedUser && storedToken) {
         const parsed: User = JSON.parse(storedUser);
         parsed.role = parsed.role.toUpperCase() as "VET" | "CLIENT";
-        setUser(parsed);
-      }
 
-      if (storedToken) {
+        setUser(parsed);
         setToken(storedToken);
       }
-
-      console.log("AuthContext: Loaded user and token from localStorage");
     } catch (err) {
-      console.error("AuthContext: Failed to load user/token", err);
+      console.error("AuthContext: Session restore failed", err);
+      localStorage.removeItem("vetlink_user");
+      localStorage.removeItem("vetlink_token");
       setUser(null);
       setToken(null);
     } finally {
@@ -70,19 +68,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = async (credentials: { email: string; password: string }) => {
     const res = await AuthApi.login(credentials);
 
+    const token = res.data.token;
+    if (!token) {
+      throw new Error("Token not returned from backend");
+    }
+
     const loggedUser: User = {
       ...res.data.user,
       role: res.data.user.role.toUpperCase(),
     };
 
-    setUser(loggedUser);
+    // 🔐 WRITE TO LOCALSTORAGE FIRST (SYNC)
+    localStorage.setItem("vetlink_token", token);
     localStorage.setItem("vetlink_user", JSON.stringify(loggedUser));
 
-    if (res.data.token) {
-      setToken(res.data.token);
-      localStorage.setItem("vetlink_token", res.data.token);
-      console.log("AuthContext: Token saved", res.data.token);
-    }
+    // 🔁 THEN update React state
+    setToken(token);
+    setUser(loggedUser);
 
     return loggedUser;
   };
@@ -91,30 +93,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const register = async (data: any) => {
     const res = await AuthApi.register(data);
 
+    const token = res.data.token;
+    if (!token) {
+      throw new Error("Token not returned from backend");
+    }
+
     const registeredUser: User = {
       ...res.data.user,
       role: res.data.user.role.toUpperCase(),
     };
 
-    setUser(registeredUser);
+    localStorage.setItem("vetlink_token", token);
     localStorage.setItem("vetlink_user", JSON.stringify(registeredUser));
 
-    if (res.data.token) {
-      setToken(res.data.token);
-      localStorage.setItem("vetlink_token", res.data.token);
-      console.log("AuthContext: Token saved", res.data.token);
-    }
+    setToken(token);
+    setUser(registeredUser);
 
     return registeredUser;
   };
 
   /* 🚪 LOGOUT */
   const logout = () => {
-    setUser(null);
-    setToken(null);
     localStorage.removeItem("vetlink_user");
     localStorage.removeItem("vetlink_token");
-    console.log("AuthContext: User logged out");
+    setUser(null);
+    setToken(null);
   };
 
   return (
@@ -134,7 +137,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-
+/* ========================
+   HOOK
+======================== */
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);

@@ -26,6 +26,17 @@ export interface VetProfilePayload {
   services?: string[];
 }
 
+// --- UPDATED APPOINTMENT INTERFACE ---
+export interface Appointment {
+  appointment_id: string;
+  client_name: string;
+  pet_name: string;
+  service_name: string;
+  appointment_date: string;
+  // Included both 'confirmed' and 'approved' to resolve 500 errors and UI visibility
+  status: 'pending' | 'confirmed' | 'rejected' | 'approved';
+}
+
 export const VetsApi = {
   list: (params?: { q?: string; city?: string; service?: string }) =>
     api.get<Vet[]>("/vetprofile", { params }),
@@ -49,4 +60,18 @@ export const VetsApi = {
 
   updateServices: (vetId: string, serviceIds: string[]) =>
     api.put(`/vetservices/${vetId}`, { serviceIds }),
+
+  
+  getAppointments: (vetId: string) =>
+    api.get<Appointment[]>(`/appointments/vet/${vetId}`),
+
+
+  updateAppointment: (
+    appointmentId: string, 
+    data: { status: 'confirmed' | 'rejected' | 'approved' }
+  ) => api.patch(`/appointments/${appointmentId}`, data),
+
+
+  deleteAppointment: (appointmentId: string) =>
+    api.delete(`/appointments/${appointmentId}`),
 };
