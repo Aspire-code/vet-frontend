@@ -17,8 +17,6 @@ export interface Vet {
   state?: string;
   zip_code?: string;
   profile_pic_url?: string;
-  // This ensures the client-side code can always find the array of objects
-  // needed to render the "Vaccination", "Grooming", etc. badges.
   services?: ServiceObject[]; 
 }
 
@@ -31,7 +29,6 @@ export interface VetProfilePayload {
   state?: string;
   zip_code?: string;
   profile_pic_url?: string;
-  // This is what the Vet sends to the backend as simple text tags
   services?: string[]; 
 }
 
@@ -45,11 +42,6 @@ export interface Appointment {
 }
 
 export const VetsApi = {
-  /**
-   * Fetches the list of Vets. 
-   * The backend result for each Vet should include the joined services table
-   * so that the Client Dashboard can render the badges immediately.
-   */
   list: (params?: { q?: string; location?: string }) =>
     api.get<Vet[]>("/vetprofile", { params }),
 
@@ -62,11 +54,6 @@ export const VetsApi = {
   createProfile: (data: VetProfilePayload) =>
     api.post("/vetprofile", data),
 
-  /**
-   * When the Vet updates their profile, we send the array of service strings.
-   * Your backend should process these strings, ensure they exist in the 
-   * 'Services' table, and update the 'VetServices' join table.
-   */
   updateProfile: (vetId: string, data: VetProfilePayload) =>
     api.put(`/vetprofile/${vetId}`, data),
 
@@ -76,10 +63,15 @@ export const VetsApi = {
   getAppointments: (vetId: string) =>
     api.get<Appointment[]>(`/appointments/vet/${vetId}`),
 
+  /**
+   * FINAL FIX: Matches your backend router perfectly.
+   * Method: PUT
+   * Path: /appointments/:appointmentId/status
+   */
   updateAppointment: (
     appointmentId: string, 
     data: { status: 'confirmed' | 'rejected' | 'approved' }
-  ) => api.patch(`/appointments/${appointmentId}`, data),
+  ) => api.put(`/appointments/${appointmentId}/status`, data),
 
   deleteAppointment: (appointmentId: string) =>
     api.delete(`/appointments/${appointmentId}`),

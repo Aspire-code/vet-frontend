@@ -66,7 +66,7 @@ export default function Home() {
       {/* Hero Section */}
       <section className="h-[320px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex flex-col justify-center items-center px-4 text-center">
         <h1 className="text-4xl font-bold">
-          Professional Veterinarians at Your Fingertips
+          Nyeri County Animal Health Services Platform
         </h1>
         <p className="mt-3 text-lg">
           Search trusted vets near you and connect instantly
